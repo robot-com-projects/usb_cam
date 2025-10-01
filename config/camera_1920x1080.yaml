@@ -1,0 +1,79 @@
+camera_matrix:
+  cols: 3
+  data:
+  - 590.4448500000001
+  - 0.0
+  - 1005.04863
+  - 0.0
+  - 590.2584899999999
+  - 531.4148700000001
+  - 0.0
+  - 0.0
+  - 1.0
+  rows: 3
+camera_name: scaled_from_640x360
+distortion_coefficients:
+  cols: 4
+  data:
+  - -0.080185
+  - 0.078456
+  - -0.065753
+  - 0.016972
+  rows: 1
+distortion_model: equidistant
+image_height: 1080
+image_width: 1920
+projection_matrix:
+  cols: 4
+  data:
+  - !!python/object/apply:numpy.core.multiarray.scalar
+    - &id001 !!python/object/apply:numpy.dtype
+      args:
+      - f8
+      - false
+      - true
+      state: !!python/tuple
+      - 3
+      - <
+      - null
+      - null
+      - null
+      - -1
+      - -1
+      - 0
+    - !!binary |
+      Ak2EDY9zgkA=
+  - 0.0
+  - !!python/object/apply:numpy.core.multiarray.scalar
+    - *id001
+    - !!binary |
+      1hwgmGNoj0A=
+  - 1.0
+  - 0.0
+  - !!python/object/apply:numpy.core.multiarray.scalar
+    - *id001
+    - !!binary |
+      voI0YxFygkA=
+  - !!python/object/apply:numpy.core.multiarray.scalar
+    - *id001
+    - !!binary |
+      vNBcp1GbgEA=
+  - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+  - 0.0
+  rows: 3
+rectification_matrix:
+  cols: 3
+  data:
+  - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+  rows: 3
