@@ -13,24 +13,24 @@ Each camera is defined by:
 
 
 configs = {
-    "bimanual_i2rt_temp": {
+    "bimanual_i2rt": {
         "cameras": [
             {
                 "name": "main_camera",
                 "device": "/dev/video0",
-                "param_name": "params_main_camera.yaml",
+                "param_name": "params_main_camera_simple.yaml",
                 "topic_name": "/main_camera/main_camera/color",
             },
             {
                 "name": "left_wrist_camera",
-                "device": "/dev/video2",
-                "param_name": "params_left_wrist.yaml",
+                "device": "/dev/video4",
+                "param_name": "params_left_wrist_simple.yaml",
                 "topic_name": "/left_wrist_camera/left_wrist_camera/color",
             },
             {
                 "name": "right_wrist_camera", 
-                "device": "/dev/video4",
-                "param_name": "params_right_wrist.yaml",
+                "device": "/dev/video8",
+                "param_name": "params_right_wrist_simple.yaml",
                 "topic_name": "/right_wrist_camera/right_wrist_camera/color",
             },
         ]
@@ -40,7 +40,9 @@ configs = {
             {
                 "name": "main_camera",
                 "device": "/dev/video0",
-                "param_name": "params_main_camera.yaml",
+                "width": 640,
+                "height": 360,
+                "param_name": "params_main_camera_simple.yaml",
                 "topic_name": "/main_camera/main_camera/color",
             },
         ]

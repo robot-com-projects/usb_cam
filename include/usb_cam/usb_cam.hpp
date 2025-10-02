@@ -43,6 +43,10 @@ extern "C" {
 #include <string>
 #include <vector>
 
+#include <opencv2/opencv.hpp>
+#include <opencv2/calib3d.hpp>
+#include <opencv2/imgproc.hpp>
+
 #include "usb_cam/utils.hpp"
 #include "usb_cam/formats/pixel_format_base.hpp"
 #include "usb_cam/formats/av_pixel_format_helper.hpp"
@@ -125,6 +129,9 @@ typedef struct parameters_t
   bool auto_white_balance;
   bool autoexposure;
   bool autofocus;
+  bool enable_undistortion;
+  int stabilization_frames;
+  bool enable_camera_controls;
 
   parameters_t()
 // *INDENT-OFF*
@@ -148,7 +155,10 @@ typedef struct parameters_t
     focus(-1),
     auto_white_balance(true),
     autoexposure(true),
-    autofocus(false)
+    autofocus(false),
+    enable_undistortion(false),
+    stabilization_frames(10),
+    enable_camera_controls(false)
   {
   }
 // *INDENT-ON*
@@ -414,6 +424,14 @@ private:
 
   void uninit_device();
   void close_device();
+  
+  // Undistortion methods
+  void load_camera_calibration();
+  void init_undistortion_maps();
+  
+  // Camera control methods
+  void configure_camera_controls(const parameters_t & parameters);
+  void stabilize_auto_exposure(int frames);
 
   std::string m_device_name;
   usb_cam::utils::io_method_t m_io;
@@ -431,6 +449,14 @@ private:
   int m_framerate;
   const time_t m_epoch_time_shift_us;
   std::vector<capture_format_t> m_supported_formats;
+  
+  // Undistortion variables
+  bool m_enable_undistortion;
+  cv::Mat m_camera_matrix;
+  cv::Mat m_distortion_coeffs;
+  cv::Mat m_map1, m_map2;
+  cv::Mat m_undistorted_image;
+  std::string m_camera_info_url;
 };
 
 }  // namespace usb_cam
