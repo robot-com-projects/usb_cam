@@ -17,22 +17,22 @@ configs = {
         "cameras": [
             {
                 "name": "main_camera",
-                "device": "/dev/video0",
+                "device": "/dev/video12",
                 "param_name": "params_main_camera_simple.yaml",
                 "topic_name": "/main_camera/main_camera/color",
             },
-            {
-                "name": "left_wrist_camera",
-                "device": "/dev/video4",
-                "param_name": "params_left_wrist_simple.yaml",
-                "topic_name": "/left_wrist_camera/left_wrist_camera/color",
-            },
-            {
-                "name": "right_wrist_camera", 
-                "device": "/dev/video8",
-                "param_name": "params_right_wrist_simple.yaml",
-                "topic_name": "/right_wrist_camera/right_wrist_camera/color",
-            },
+            # {
+            #     "name": "left_wrist_camera",
+            #     "device": "/dev/video4",
+            #     "param_name": "params_left_wrist_simple.yaml",
+            #     "topic_name": "/left_wrist_camera/left_wrist_camera/color",
+            # },
+            # {
+            #     "name": "right_wrist_camera", 
+            #     "device": "/dev/video8",
+            #     "param_name": "params_right_wrist_simple.yaml",
+            #     "topic_name": "/right_wrist_camera/right_wrist_camera/color",
+            # },
         ]
     },
     "default": {

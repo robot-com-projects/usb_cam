@@ -4,6 +4,7 @@
 
 import os
 import sys
+import importlib.util
 from pathlib import Path
 
 from launch import LaunchDescription
@@ -13,10 +14,16 @@ from launch_ros.actions import Node
 # Add current directory to path to import local modules
 dir_path = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(dir_path)
-sys.path.append(os.path.join(dir_path, 'config'))
+usb_configs_path = os.path.join(dir_path, 'usb_configs')
+sys.path.insert(0, usb_configs_path)  # Insert at beginning to prioritize this config
 
 from camera_config import USB_CAM_DIR
-from config.configs import configs
+# Import USB camera configs explicitly from the usb_configs directory
+import importlib.util
+spec = importlib.util.spec_from_file_location("usb_configs", os.path.join(usb_configs_path, "usb_configs.py"))
+usb_configs_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(usb_configs_module)
+usb_cam_configs = usb_configs_module.configs
 
 # Try to import optional dependencies
 try:
@@ -42,14 +49,15 @@ def generate_launch_description():
     printlog(f"Using robot configuration: {robot_type}", "INFO")
     
     # Get configuration
-    if robot_type not in configs:
-        printlog(f"Robot type '{robot_type}' not found in configs, using 'default'", "ERROR")
+    if robot_type not in usb_cam_configs:
+        printlog(f"Robot type '{robot_type}' not found in USB camera configs, using 'default'", "ERROR")
         robot_type = 'default'
     
-    config = configs[robot_type]
+    config = usb_cam_configs[robot_type]
     cameras_config = config.get('cameras', [])
     
     printlog(f"Found {len(cameras_config)} USB cameras in configuration", "INFO")
+    printlog(f"Cameras configuration: {cameras_config}", "INFO")
     
     # Create camera nodes from configuration - simplified approach
     camera_nodes = []
