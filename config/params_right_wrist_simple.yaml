@@ -1,0 +1,26 @@
+/**:
+    ros__parameters:
+      video_device: "/dev/video6"
+      framerate: 30.0
+      io_method: "mmap"
+      frame_id: "right_wrist_camera"
+      pixel_format: "mjpeg2rgb"
+      av_device_format: "YUV422P"
+      image_width: 640
+      image_height: 480
+      camera_name: "right_wrist_camera"
+      camera_info_url: "package://usb_cam/config/camera_info_640x360.yaml"
+      brightness: -1
+      contrast: -1
+      saturation: -1
+      sharpness: -1
+      gain: 0
+      auto_white_balance: true
+      white_balance: 4000
+      autoexposure: true
+      exposure: -1
+      autofocus: false
+      focus: -1
+      enable_undistortion: false
+      stabilization_frames: 5
+      enable_camera_controls: false

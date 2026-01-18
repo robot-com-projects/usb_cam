@@ -43,6 +43,9 @@ extern "C" {
 #include <memory>
 #include <string>
 #include <vector>
+#include <fstream>
+#include <sstream>
+#include <thread>
 
 #include "opencv2/imgproc.hpp"
 
@@ -62,7 +65,8 @@ UsbCam::UsbCam()
   m_number_of_buffers(4), m_buffers(new usb_cam::utils::buffer[m_number_of_buffers]), m_image(),
   m_avframe(NULL), m_avcodec(NULL), m_avoptions(NULL),
   m_avcodec_context(NULL), m_is_capturing(false), m_framerate(0),
-  m_epoch_time_shift_us(usb_cam::utils::get_epoch_time_shift_us()), m_supported_formats()
+  m_epoch_time_shift_us(usb_cam::utils::get_epoch_time_shift_us()), m_supported_formats(),
+  m_enable_undistortion(false), m_camera_info_url()
 {}
 
 UsbCam::~UsbCam()
@@ -85,6 +89,33 @@ void UsbCam::process_image(const char * src, char * & dest, const int & bytes_us
     memcpy(dest, src, m_image.size_in_bytes);
   } else {
     m_image.pixel_format->convert(src, dest, bytes_used);
+  }
+  
+  // Apply undistortion if enabled
+  if (m_enable_undistortion && !m_map1.empty() && !m_map2.empty()) {
+    // Convert the image data to OpenCV Mat
+    cv::Mat input_image;
+    
+    // Determine the OpenCV format based on pixel format
+    if (m_image.pixel_format->name() == "mjpeg2rgb" || 
+        m_image.pixel_format->name() == "yuyv2rgb" ||
+        m_image.pixel_format->name() == "uyvy2rgb") {
+      // RGB format
+      input_image = cv::Mat(m_image.height, m_image.width, CV_8UC3, dest);
+    } else if (m_image.pixel_format->name() == "mono8") {
+      // Grayscale format
+      input_image = cv::Mat(m_image.height, m_image.width, CV_8UC1, dest);
+    } else {
+      // Default to RGB for other formats
+      input_image = cv::Mat(m_image.height, m_image.width, CV_8UC3, dest);
+    }
+    
+    // Apply fisheye undistortion using pre-computed maps
+    cv::remap(input_image, m_undistorted_image, m_map1, m_map2, 
+              cv::INTER_LINEAR, cv::BORDER_CONSTANT);
+    
+    // Copy the undistorted image back to the destination buffer
+    memcpy(dest, m_undistorted_image.data, m_image.size_in_bytes);
   }
 }
 
@@ -526,12 +557,42 @@ void UsbCam::configure(
   m_image.set_size_in_bytes();
   m_framerate = parameters.framerate;
 
+  // Configure undistortion
+  m_enable_undistortion = parameters.enable_undistortion;
+  m_camera_info_url = parameters.camera_info_url;
+  
+  if (m_enable_undistortion) {
+    load_camera_calibration();
+    init_undistortion_maps();
+    // Initialize the undistorted image buffer
+    m_undistorted_image = cv::Mat(m_image.height, m_image.width, CV_8UC3);
+  }
+
   init_device();
+  
+  // Configure camera controls after device initialization (if enabled)
+  // This is optional and can be disabled if it causes issues
+  if (parameters.enable_camera_controls) {
+    try {
+      configure_camera_controls(parameters);
+    } catch (const std::exception& e) {
+      std::cout << "Warning: Camera controls configuration failed: " << e.what() << std::endl;
+      std::cout << "Continuing without advanced camera controls..." << std::endl;
+    }
+  } else {
+    std::cout << "Camera controls disabled - using camera defaults" << std::endl;
+  }
 }
 
 void UsbCam::start()
 {
   start_capturing();
+  
+  // Stabilize auto exposure after starting capture (if enabled)
+  // This helps ensure consistent exposure across frames
+  if (m_enable_undistortion) {  // Only stabilize if we're doing advanced processing
+    stabilize_auto_exposure(5);  // Reduced to 5 frames for safety
+  }
 }
 
 void UsbCam::shutdown()
@@ -729,6 +790,259 @@ bool UsbCam::set_v4l_parameter(const std::string & param, const std::string & va
     retcode = 1;
   }
   return retcode;
+}
+
+void UsbCam::load_camera_calibration()
+{
+  // Simple YAML parser for camera calibration
+  // Extract the file path from package:// URL
+  std::string file_path = m_camera_info_url;
+  if (file_path.find("package://") == 0) {
+    // For now, assume the file is in the usb_cam config directory
+    // In a full implementation, you'd resolve the package path properly
+    size_t pos = file_path.find("config/");
+    if (pos != std::string::npos) {
+      file_path = "/workspace/robot/ros2/src/vision/usb_cam/" + file_path.substr(pos);
+    }
+  }
+
+  std::ifstream file(file_path);
+  if (!file.is_open()) {
+    std::cerr << "Could not open camera calibration file: " << file_path << std::endl;
+    m_enable_undistortion = false;
+    return;
+  }
+
+  std::string line;
+  std::vector<double> camera_matrix_data;
+  std::vector<double> distortion_data;
+  bool reading_camera_matrix = false;
+  bool reading_distortion = false;
+
+  while (std::getline(file, line)) {
+    // Remove leading/trailing whitespace
+    line.erase(0, line.find_first_not_of(" \t"));
+    line.erase(line.find_last_not_of(" \t") + 1);
+
+    if (line.find("camera_matrix:") != std::string::npos) {
+      reading_camera_matrix = true;
+      reading_distortion = false;
+      continue;
+    } else if (line.find("distortion_coefficients:") != std::string::npos) {
+      reading_camera_matrix = false;
+      reading_distortion = true;
+      continue;
+    } else if (line.find("distortion_model:") != std::string::npos ||
+               line.find("rectification_matrix:") != std::string::npos ||
+               line.find("projection_matrix:") != std::string::npos) {
+      reading_camera_matrix = false;
+      reading_distortion = false;
+      continue;
+    }
+
+    if (reading_camera_matrix && line.find("data:") != std::string::npos) {
+      // Extract data from line like "  data: [196.81495, 0., 335.01621, ...]"
+      size_t start = line.find('[');
+      size_t end = line.find(']');
+      if (start != std::string::npos && end != std::string::npos) {
+        std::string data_str = line.substr(start + 1, end - start - 1);
+        std::stringstream ss(data_str);
+        std::string token;
+        while (std::getline(ss, token, ',')) {
+          token.erase(0, token.find_first_not_of(" \t"));
+          token.erase(token.find_last_not_of(" \t") + 1);
+          if (!token.empty()) {
+            camera_matrix_data.push_back(std::stod(token));
+          }
+        }
+      }
+    } else if (reading_distortion && line.find("data:") != std::string::npos) {
+      // Extract distortion coefficients
+      size_t start = line.find('[');
+      size_t end = line.find(']');
+      if (start != std::string::npos && end != std::string::npos) {
+        std::string data_str = line.substr(start + 1, end - start - 1);
+        std::stringstream ss(data_str);
+        std::string token;
+        while (std::getline(ss, token, ',')) {
+          token.erase(0, token.find_first_not_of(" \t"));
+          token.erase(token.find_last_not_of(" \t") + 1);
+          if (!token.empty()) {
+            distortion_data.push_back(std::stod(token));
+          }
+        }
+      }
+    }
+  }
+
+  file.close();
+
+  // Validate and set up camera matrix
+  if (camera_matrix_data.size() == 9) {
+    m_camera_matrix = cv::Mat(3, 3, CV_64F);
+    for (int i = 0; i < 9; i++) {
+      m_camera_matrix.at<double>(i / 3, i % 3) = camera_matrix_data[i];
+    }
+    std::cout << "Camera matrix loaded successfully" << std::endl;
+  } else {
+    std::cerr << "Invalid camera matrix data size: " << camera_matrix_data.size() << std::endl;
+    m_enable_undistortion = false;
+    return;
+  }
+
+  // Validate and set up distortion coefficients
+  if (distortion_data.size() >= 4) {
+    m_distortion_coeffs = cv::Mat(4, 1, CV_64F);
+    for (int i = 0; i < 4; i++) {
+      m_distortion_coeffs.at<double>(i, 0) = distortion_data[i];
+    }
+    std::cout << "Distortion coefficients loaded successfully" << std::endl;
+  } else {
+    std::cerr << "Invalid distortion coefficients data size: " << distortion_data.size() << std::endl;
+    m_enable_undistortion = false;
+    return;
+  }
+}
+
+void UsbCam::init_undistortion_maps()
+{
+  if (!m_enable_undistortion || m_camera_matrix.empty() || m_distortion_coeffs.empty()) {
+    return;
+  }
+
+  cv::Size image_size(m_image.width, m_image.height);
+  cv::Mat E = cv::Mat::eye(3, 3, CV_64F);
+
+  // Initialize fisheye undistortion maps
+  cv::fisheye::initUndistortRectifyMap(
+    m_camera_matrix,
+    m_distortion_coeffs,
+    E,
+    m_camera_matrix,
+    image_size,
+    CV_16SC2,
+    m_map1,
+    m_map2
+  );
+
+  std::cout << "Undistortion maps initialized for fisheye camera" << std::endl;
+}
+
+void UsbCam::configure_camera_controls(const parameters_t & parameters)
+{
+  // Configure camera controls using V4L2 directly (more reliable than v4l2-ctl)
+  struct v4l2_control control;
+  
+  std::cout << "Configuring camera controls..." << std::endl;
+  
+  // Set auto exposure mode (0.75 = auto, 0.25 = manual in OpenCV terms)
+  // In V4L2: V4L2_EXPOSURE_AUTO = 0, V4L2_EXPOSURE_MANUAL = 1, V4L2_EXPOSURE_SHUTTER_PRIORITY = 2, V4L2_EXPOSURE_APERTURE_PRIORITY = 3
+  if (parameters.autoexposure) {
+    control.id = V4L2_CID_EXPOSURE_AUTO;
+    control.value = V4L2_EXPOSURE_AUTO;  // Auto exposure
+    if (usb_cam::utils::xioctl(m_fd, VIDIOC_S_CTRL, &control) == 0) {
+      std::cout << "Auto exposure enabled" << std::endl;
+    } else {
+      std::cout << "Warning: Could not enable auto exposure" << std::endl;
+    }
+  } else {
+    control.id = V4L2_CID_EXPOSURE_AUTO;
+    control.value = V4L2_EXPOSURE_MANUAL;  // Manual exposure
+    if (usb_cam::utils::xioctl(m_fd, VIDIOC_S_CTRL, &control) == 0) {
+      std::cout << "Manual exposure enabled" << std::endl;
+      
+      // Set manual exposure value if specified
+      if (parameters.exposure > 0) {
+        control.id = V4L2_CID_EXPOSURE_ABSOLUTE;
+        control.value = parameters.exposure;
+        if (usb_cam::utils::xioctl(m_fd, VIDIOC_S_CTRL, &control) == 0) {
+          std::cout << "Manual exposure set to: " << parameters.exposure << std::endl;
+        }
+      }
+    } else {
+      std::cout << "Warning: Could not set manual exposure" << std::endl;
+    }
+  }
+  
+  // Set auto white balance
+  if (parameters.auto_white_balance) {
+    control.id = V4L2_CID_AUTO_WHITE_BALANCE;
+    control.value = 1;  // Enable auto white balance
+    if (usb_cam::utils::xioctl(m_fd, VIDIOC_S_CTRL, &control) == 0) {
+      std::cout << "Auto white balance enabled" << std::endl;
+    } else {
+      std::cout << "Warning: Could not enable auto white balance" << std::endl;
+    }
+  } else {
+    control.id = V4L2_CID_AUTO_WHITE_BALANCE;
+    control.value = 0;  // Disable auto white balance
+    if (usb_cam::utils::xioctl(m_fd, VIDIOC_S_CTRL, &control) == 0) {
+      std::cout << "Auto white balance disabled" << std::endl;
+      
+      // Set manual white balance if specified
+      if (parameters.white_balance > 0) {
+        control.id = V4L2_CID_WHITE_BALANCE_TEMPERATURE;
+        control.value = parameters.white_balance;
+        if (usb_cam::utils::xioctl(m_fd, VIDIOC_S_CTRL, &control) == 0) {
+          std::cout << "White balance temperature set to: " << parameters.white_balance << std::endl;
+        }
+      }
+    }
+  }
+  
+  // Set conservative camera settings (like your Python script)
+  // Reset brightness to default (0 = auto/default)
+  if (parameters.brightness >= 0) {
+    control.id = V4L2_CID_BRIGHTNESS;
+    control.value = parameters.brightness;
+    if (usb_cam::utils::xioctl(m_fd, VIDIOC_S_CTRL, &control) == 0) {
+      std::cout << "Brightness set to: " << parameters.brightness << std::endl;
+    }
+  }
+  
+  // Set moderate contrast (32 is a good default like in your Python script)
+  if (parameters.contrast >= 0) {
+    control.id = V4L2_CID_CONTRAST;
+    control.value = parameters.contrast;
+    if (usb_cam::utils::xioctl(m_fd, VIDIOC_S_CTRL, &control) == 0) {
+      std::cout << "Contrast set to: " << parameters.contrast << std::endl;
+    }
+  }
+  
+  // Set moderate saturation
+  if (parameters.saturation >= 0) {
+    control.id = V4L2_CID_SATURATION;
+    control.value = parameters.saturation;
+    if (usb_cam::utils::xioctl(m_fd, VIDIOC_S_CTRL, &control) == 0) {
+      std::cout << "Saturation set to: " << parameters.saturation << std::endl;
+    }
+  }
+  
+  // Set auto gain (0 = auto)
+  if (parameters.gain >= 0) {
+    control.id = V4L2_CID_GAIN;
+    control.value = parameters.gain;
+    if (usb_cam::utils::xioctl(m_fd, VIDIOC_S_CTRL, &control) == 0) {
+      std::cout << "Gain set to: " << parameters.gain << std::endl;
+    }
+  }
+  
+  std::cout << "Camera controls configuration complete" << std::endl;
+}
+
+void UsbCam::stabilize_auto_exposure(int frames)
+{
+  if (!m_is_capturing || frames <= 0) {
+    return;
+  }
+  
+  std::cout << "Stabilizing auto exposure (" << frames << " frames)..." << std::endl;
+  
+  // Use a safer approach - just wait for the camera to stabilize
+  // instead of actively reading frames which can cause crashes
+  std::this_thread::sleep_for(std::chrono::milliseconds(frames * 100));
+  
+  std::cout << "Auto exposure stabilization complete" << std::endl;
 }
 
 }  // namespace usb_cam

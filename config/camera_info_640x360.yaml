@@ -1,0 +1,20 @@
+image_width: 640
+image_height: 360
+camera_name: rear
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [196.81495, 0., 335.01621, 0., 196.75283, 177.13829, 0., 0., 1.]
+distortion_model: equidistant
+distortion_coefficients:
+  rows: 1
+  cols: 4
+  data: [-0.080185, 0.078456, -0.065753, 0.016972]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1., 0., 0., 0., 1., 0., 0., 0., 1.]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [196.81495, 0., 335.01621, 1., 0., 196.75283, 177.13829, 0., 0., 0., 1., 0.]

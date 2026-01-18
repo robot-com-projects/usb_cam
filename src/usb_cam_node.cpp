@@ -83,6 +83,9 @@ UsbCamNode::UsbCamNode(const rclcpp::NodeOptions & node_options)
   this->declare_parameter("exposure", 100);
   this->declare_parameter("autofocus", false);
   this->declare_parameter("focus", -1);  // 0-255, -1 "leave alone"
+  this->declare_parameter("enable_undistortion", false);
+  this->declare_parameter("stabilization_frames", 10);
+  this->declare_parameter("enable_camera_controls", false);
 
   get_params();
   init();
@@ -231,7 +234,7 @@ void UsbCamNode::get_params()
       "camera_name", "camera_info_url", "frame_id", "framerate", "image_height", "image_width",
       "io_method", "pixel_format", "av_device_format", "video_device", "brightness", "contrast",
       "saturation", "sharpness", "gain", "auto_white_balance", "white_balance", "autoexposure",
-      "exposure", "autofocus", "focus"
+      "exposure", "autofocus", "focus", "enable_undistortion", "stabilization_frames", "enable_camera_controls"
     }
   );
 
@@ -285,6 +288,12 @@ void UsbCamNode::assign_params(const std::vector<rclcpp::Parameter> & parameters
       m_parameters.autofocus = parameter.as_bool();
     } else if (parameter.get_name() == "focus") {
       m_parameters.focus = parameter.as_int();
+    } else if (parameter.get_name() == "enable_undistortion") {
+      m_parameters.enable_undistortion = parameter.as_bool();
+    } else if (parameter.get_name() == "stabilization_frames") {
+      m_parameters.stabilization_frames = parameter.as_int();
+    } else if (parameter.get_name() == "enable_camera_controls") {
+      m_parameters.enable_camera_controls = parameter.as_bool();
     } else {
       RCLCPP_WARN(this->get_logger(), "Invalid parameter name: %s", parameter.get_name().c_str());
     }
