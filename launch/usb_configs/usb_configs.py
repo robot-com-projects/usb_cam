@@ -35,6 +35,16 @@ configs = {
         #     },
         ]
     },
+    "bimanual_mobile": {
+        "cameras": [
+            {
+                "name": "main_camera",
+                "device": "/dev/0",
+                "param_name": "params_main_camera_simple.yaml",
+                "topic_name": "/main_camera/main_camera/color",
+            },
+        ]
+    },
     "default": {
         "cameras": [
             {
