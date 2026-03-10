@@ -185,6 +185,7 @@ inline std::map<std::string, v4l2_capability> available_devices()
         } else {
           v4l2_devices[device_name] = device_capabilities;
         }
+        close(fd);
       }
     } else {
       // device doesn't exist, continue
