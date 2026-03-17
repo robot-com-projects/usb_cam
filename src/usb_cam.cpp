@@ -264,7 +264,11 @@ void UsbCam::start_capturing()
       // Start the stream
       type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
       if (-1 == usb_cam::utils::xioctl(m_fd, VIDIOC_STREAMON, &type)) {
-        throw std::runtime_error("Unable to start stream");
+        int err = errno;
+        std::ostringstream oss;
+        oss << "Unable to start stream on " << m_device_name
+            << " (errno " << err << ": " << strerror(err) << ")";
+        throw std::runtime_error(oss.str());
       }
       break;
     case io_method_t::IO_METHOD_USERPTR:
