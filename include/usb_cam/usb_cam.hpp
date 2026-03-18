@@ -412,6 +412,8 @@ public:
   }
 
 private:
+  static constexpr unsigned int kMaxConsecutiveReadErrors = 3;
+
   void init_read();
   void init_mmap();
   void init_userp();
@@ -420,6 +422,7 @@ private:
   void open_device();
   void grab_image();
   void read_frame();
+  void reopen_device();
   void process_image(const char * src, char * & dest, const int & bytes_used);
 
   void uninit_device();
@@ -448,6 +451,7 @@ private:
   bool m_is_capturing;
   int m_framerate;
   const time_t m_epoch_time_shift_us;
+  unsigned int m_consecutive_read_errors;
   std::vector<capture_format_t> m_supported_formats;
   
   // Undistortion variables

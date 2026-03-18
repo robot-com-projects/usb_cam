@@ -65,7 +65,8 @@ UsbCam::UsbCam()
   m_number_of_buffers(4), m_buffers(new usb_cam::utils::buffer[m_number_of_buffers]), m_image(),
   m_avframe(NULL), m_avcodec(NULL), m_avoptions(NULL),
   m_avcodec_context(NULL), m_is_capturing(false), m_framerate(0),
-  m_epoch_time_shift_us(usb_cam::utils::get_epoch_time_shift_us()), m_supported_formats(),
+  m_epoch_time_shift_us(usb_cam::utils::get_epoch_time_shift_us()),
+  m_consecutive_read_errors(0), m_supported_formats(),
   m_enable_undistortion(false), m_camera_info_url()
 {}
 
@@ -145,22 +146,43 @@ void UsbCam::read_frame()
 
       // Get current v4l2 pixel format
       if (-1 == usb_cam::utils::xioctl(m_fd, static_cast<int>(VIDIOC_G_FMT), &m_image.v4l2_fmt)) {
-        switch (errno) {
-          case EAGAIN:
-            return;
-          default:
-            throw std::runtime_error("Invalid v4l2 format");
+        if (errno == EAGAIN) {
+          return;
         }
+        ++m_consecutive_read_errors;
+        std::cerr << "[usb_cam] VIDIOC_G_FMT failed on " << m_device_name
+                  << " (errno " << errno << ": " << strerror(errno)
+                  << ") — error " << m_consecutive_read_errors
+                  << "/" << kMaxConsecutiveReadErrors << std::endl;
+        if (m_consecutive_read_errors >= kMaxConsecutiveReadErrors) {
+          try {
+            reopen_device();
+          } catch (...) {
+            throw std::runtime_error("Device recovery failed on " + m_device_name);
+          }
+        }
+        return;
       }
       /// Dequeue buffer with the new image
       if (-1 == usb_cam::utils::xioctl(m_fd, static_cast<int>(VIDIOC_DQBUF), &buf)) {
-        switch (errno) {
-          case EAGAIN:
-            return;
-          default:
-            throw std::runtime_error("Unable to retrieve frame with mmap");
+        if (errno == EAGAIN) {
+          return;
         }
+        ++m_consecutive_read_errors;
+        std::cerr << "[usb_cam] VIDIOC_DQBUF failed on " << m_device_name
+                  << " (errno " << errno << ": " << strerror(errno)
+                  << ") — error " << m_consecutive_read_errors
+                  << "/" << kMaxConsecutiveReadErrors << std::endl;
+        if (m_consecutive_read_errors >= kMaxConsecutiveReadErrors) {
+          try {
+            reopen_device();
+          } catch (...) {
+            throw std::runtime_error("Device recovery failed on " + m_device_name);
+          }
+        }
+        return;
       }
+      m_consecutive_read_errors = 0;
 
       // Get timestamp from V4L2 image buffer
       m_image.stamp = usb_cam::utils::calc_img_timestamp(buf.timestamp, m_epoch_time_shift_us);
@@ -604,6 +626,29 @@ void UsbCam::shutdown()
   stop_capturing();
   uninit_device();
   close_device();
+}
+
+void UsbCam::reopen_device()
+{
+  std::cerr << "[usb_cam] Attempting device recovery on " << m_device_name << std::endl;
+
+  m_is_capturing = false;
+
+  if (m_fd != -1) {
+    close(m_fd);
+    m_fd = -1;
+  }
+
+  usleep(200000);
+
+  m_buffers.reset(new usb_cam::utils::buffer[m_number_of_buffers]);
+
+  open_device();
+  init_device();
+  start_capturing();
+
+  m_consecutive_read_errors = 0;
+  std::cerr << "[usb_cam] Device recovery successful on " << m_device_name << std::endl;
 }
 
 /// @brief Grab new image from V4L2 device, return pointer to image
